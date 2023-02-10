@@ -50,7 +50,16 @@ impl From<io::Error> for ModelErrorType
 struct ObjLine<'a, I>
 {
     field: &'a str,
+    rest: &'a str,
     values: I
+}
+
+impl<'a, I> ObjLine<'a, I>
+{
+    pub fn rest(&self) -> &str
+    {
+        self.rest
+    }
 }
 
 impl<'a, I: Iterator<Item=&'a str>> ObjLine<'a, I>
@@ -167,7 +176,7 @@ impl<'a> ModelParser<'a>
                 {
                     ModelErrorType::Io(error) =>
                     {
-                        println!("ignoring io error: {error:?}");
+                        eprintln!("ignoring io error: {error:?}");
                         continue;
                     },
                     _ =>
@@ -184,14 +193,14 @@ impl<'a> ModelParser<'a>
     fn parse_obj_line<'b, I: Iterator<Item=&'b str>>(
         &mut self,
         parent_dir: &Path,
-        mut line: ObjLine<'b, I>
+        line: ObjLine<'b, I>
     ) -> Result<(), ModelErrorType>
     {
         match line.field
         {
             "mtllib" =>
             {
-                let path = parent_dir.join(line.next_value()?);
+                let path = parent_dir.join(line.rest());
 
                 let mut mtl_string = String::new();
                 File::open(path)?.read_to_string(&mut mtl_string)?;
@@ -210,7 +219,7 @@ impl<'a> ModelParser<'a>
             },
             "usemtl" =>
             {
-                self.materials.set_current(line.next_value()?.to_owned());
+                self.materials.set_current(line.rest().to_owned());
                 Ok(())
             },
             "v" => Self::parse_floats(line.values, &mut self.parent.vertices, 3),
@@ -273,7 +282,15 @@ impl<'a> ModelParser<'a>
             let mut splits = line.split(' ');
             let data_type = splits.next().unwrap();
 
-            Some(ObjLine{field: data_type, values: splits})
+            let space_position = line.find(' ');
+
+            let mut after_space = "";
+            if let Some(position) = space_position
+            {
+                after_space = &line[position+1..];
+            }
+
+            Some(ObjLine{field: data_type, rest: after_space, values: splits})
         })
     }
 
