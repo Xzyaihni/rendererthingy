@@ -77,6 +77,7 @@ impl Material
 
 struct Materials
 {
+    fallback_material: Material,
     materials: HashMap<String, Material>,
     current_material: Option<String>
 }
@@ -85,7 +86,11 @@ impl Materials
 {
     pub fn new() -> Self
     {
-        Materials{materials: HashMap::new(), current_material: None}
+        Materials{
+            fallback_material: Material{diffuse_color: Some(Color::new(0.5, 0.5, 0.5))},
+            materials: HashMap::new(),
+            current_material: None
+        }
     }
 
     pub fn add(&mut self, name: String) -> Result<(), ModelErrorType>
@@ -104,9 +109,13 @@ impl Materials
 
     pub fn current(&mut self) -> Result<&mut Material, ModelErrorType>
     {
-        self.materials.get_mut(
+        Ok(self.materials.get_mut(
             self.current_material.as_ref().ok_or(ModelErrorType::Material(None))?
-        ).ok_or(ModelErrorType::MissingMaterial)
+        ).unwrap_or_else(||
+        {
+            eprintln!("error switching to material {:?}, using fallback", self.current_material);
+            &mut self.fallback_material
+        }))
     }
 
     pub fn set_current(&mut self, name: String)
@@ -122,6 +131,7 @@ impl Materials
     pub fn set_diffuse(&mut self, color: Color) -> Result<(), ModelErrorType>
     {
         let material = self.current()?;
+
         *material = Material{diffuse_color: Some(color), ..*material};
 
         Ok(())
@@ -153,7 +163,18 @@ impl<'a> ModelParser<'a>
         {
             if let Err(error_type) = self.parse_obj_line(parent_dir, line)
             {
-                return Err(ModelError{line_index: Some(line_index), error_type});
+                match error_type
+                {
+                    ModelErrorType::Io(error) =>
+                    {
+                        println!("ignoring io error: {error:?}");
+                        continue;
+                    },
+                    _ =>
+                    {
+                        return Err(ModelError{line_index: Some(line_index), error_type});
+                    }
+                }
             }
         }
 
