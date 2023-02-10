@@ -22,6 +22,7 @@ enum ModelErrorType
 {
     Io(io::Error),
     Material(Option<usize>),
+    ParsingError(String),
     GenericError,
     MissingValue,
     MissingMaterial,
@@ -66,7 +67,19 @@ impl<'a, I: Iterator<Item=&'a str>> ObjLine<'a, I>
 {
     pub fn next_value(&mut self) -> Result<&'a str, ModelErrorType>
     {
-        self.values.next().ok_or(ModelErrorType::MissingValue)
+        let value = loop
+        {
+            let value = self.values.next().ok_or(ModelErrorType::MissingValue);
+
+            if value.as_ref().unwrap_or(&"").is_empty()
+            {
+                continue;
+            }
+
+            break value;
+        };
+
+        value
     }
 }
 
@@ -253,7 +266,7 @@ impl<'a> ModelParser<'a>
             {
                 let mut component = || -> Result<f64, ModelErrorType>
                 {
-                    line.next_value()?.parse().map_err(|_| ModelErrorType::Material(None))
+                    line.next_value()?.trim().parse().map_err(|_| ModelErrorType::Material(None))
                 };
 
                 let color = Color::new(
@@ -302,9 +315,20 @@ impl<'a> ModelParser<'a>
     {
         for _ in 0..amount
         {
-            let value = unparsed.next().ok_or(ModelErrorType::GenericError)?;
+            let value = loop
+            {
+                let value = unparsed.next().ok_or(ModelErrorType::MissingValue)?;
+
+                if value.is_empty()
+                {
+                    continue;
+                }
+
+                break value;
+            };
+
             let value: f64 = value.trim().parse()
-                .map_err(|_| ModelErrorType::GenericError)?;
+                .map_err(|_| ModelErrorType::ParsingError(value.to_owned()))?;
 
             output_vector.push(value);
         }
@@ -328,6 +352,11 @@ impl<'a> ModelParser<'a>
         let mut face: Vec<FacePoint> = Vec::new();
         for value in unparsed
         {
+            if value.is_empty()
+            {
+                continue;
+            }
+
             let mut face_point: Option<FacePoint> = None;
 
             for (index_type, index) in value.split('/').enumerate()
@@ -377,6 +406,7 @@ impl<'a> ModelParser<'a>
             return Err(ModelErrorType::GenericError);
         }
 
+        let fallback_material = self.materials.fallback_material.clone();
         let material = self.materials.current()?;
 
         let mut insert_face = |index| -> Result<(), ModelErrorType>
@@ -397,7 +427,9 @@ impl<'a> ModelParser<'a>
             insert_face(v)?;
             insert_face(0)?;
 
-            self.parent.colors.push(material.diffuse_color.ok_or(ModelErrorType::NoMaterial)?);
+            self.parent.colors.push(
+                material.diffuse_color.unwrap_or(fallback_material.diffuse_color.unwrap())
+            );
         }
 
         Ok(())
