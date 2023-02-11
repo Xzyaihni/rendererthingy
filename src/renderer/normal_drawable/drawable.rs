@@ -22,12 +22,12 @@ pub struct Limits
     upper: PointDesc
 }
 
-pub trait Drawable
+pub trait Drawable<'a>
 {
-    fn set_pixel_data(&mut self, point: Point<usize>, shader: &FaceShader);
+    fn set_pixel_data(&mut self, point: Point<usize>, shader: &'a FaceShader);
     fn to_local(&self, point: Point) -> Point<usize>;
 
-    fn line(&mut self, p0: Point, p1: Point, shader: &FaceShader)
+    fn line(&mut self, p0: Point, p1: Point, shader: &'a FaceShader)
     {
         Self::line_points(self.to_local(p0), self.to_local(p1), |point|
         {
@@ -267,7 +267,7 @@ pub trait Drawable
         o0: Point,
         o1: Point,
         o2: Point,
-        shader: FaceShader
+        shader: &'a FaceShader
     )
     {
         let p0 = self.to_local(o0);
@@ -308,7 +308,7 @@ pub trait Drawable
         p0: Point,
         p1: Point,
         p2: Point,
-        shader: FaceShader
+        shader: &'a FaceShader
     )
     {
         self.line(p0, p1, &shader);

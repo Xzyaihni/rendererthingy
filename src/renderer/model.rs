@@ -285,7 +285,7 @@ impl<'a> ModelParser<'a>
     {
         text.lines().filter_map(|line|
         {
-            let line = Self::remove_comments(line);
+            let line = Self::remove_comments(line).trim();
 
             if line.len() == 0
             {

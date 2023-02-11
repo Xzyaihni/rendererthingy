@@ -157,7 +157,8 @@ pub struct Object<'a>
     lights: &'a [Light],
     points: Vec<Point3D>,
     world_points: Vec<Point3D>,
-    normals: Vec<Point3D>
+    normals: Vec<Point3D>,
+    face_shaders: Vec<FaceShader<'a>>
 }
 
 impl<'a> Object<'a>
@@ -171,7 +172,8 @@ impl<'a> Object<'a>
             lights,
             points: Vec::new(),
             world_points: Vec::new(),
-            normals: Vec::new()
+            normals: Vec::new(),
+            face_shaders: Vec::new()
         };
 
         out.update_transform();
@@ -186,7 +188,8 @@ impl<'a> Object<'a>
         p0.dot(normal) >= 0.0
     }
 
-    pub fn draw(&self, drawable: &mut impl Drawable)
+    pub fn draw<'d>(&'d self, drawable: &mut impl Drawable<'d>)
+    where 'a: 'd
     {
         for t in 0..(self.model.indices.len()/3)
         {
@@ -194,7 +197,8 @@ impl<'a> Object<'a>
         }
     }
 
-    fn draw_triangle(&self, drawable: &mut impl Drawable, start_index: usize)
+    fn draw_triangle<'d>(&'d self, drawable: &mut impl Drawable<'d>, start_index: usize)
+    where 'a: 'd
     {
         let index_at = |point_index| self.model.indices[start_index * 3 + point_index];
         let world_point = |point_index| self.world_points[index_at(point_index)];
@@ -229,9 +233,7 @@ impl<'a> Object<'a>
             }
         };
 
-        let color = self.model.colors[start_index];
-
-        let shader = FaceShader{color, lights: self.lights};
+        let shader = &self.face_shaders[start_index];
 
         drawable.triangle(point_at(0), point_at(1), point_at(2), shader);
     }
@@ -268,6 +270,12 @@ impl<'a> Object<'a>
         {
             let normal = normal_matrix * [normal.x, normal.y, normal.z];
             Point3D{x: normal[0], y: normal[1], z: normal[2]}
+        }).collect();
+
+
+        self.face_shaders = self.model.colors.iter().map(|color|
+        {
+            FaceShader{color: *color, lights: self.lights}
         }).collect();
     }
 }

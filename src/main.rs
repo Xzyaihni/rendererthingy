@@ -13,7 +13,13 @@ use renderer::{
     Object,
     common::{Point3D, Light},
     model::Model,
-    normal_drawable::NormalDrawable,
+    normal_drawable::{
+        DrawableNormal,
+        DrawableDisplay,
+        DrawSurface,
+        NormalDrawable,
+        DeferredDrawable
+    },
     picture::Picture,
     console_screen::ConsoleScreen
 };
@@ -49,18 +55,68 @@ fn main()
         intensity: 0.3
     }];
 
-    let object = Object::new(model, transform, &camera, &lights);
+    let mut object = Object::new(model, transform, &camera, &lights);
 
+    draw_full(config, &mut object);
+}
+
+fn draw<D: DrawableNormal>(object: &Object, drawable: &mut D)
+{
+    let mut surface = drawable.surface();
+
+    object.draw(&mut surface);
+    surface.display();
+}
+
+fn draw_length<D: DrawableNormal>(config: &Config, object: &mut Object, mut drawable: D)
+{
     match config.draw_mode
     {
         DrawMode::Picture =>
         {
-            draw_picture(object, config);
+            draw(&object, &mut drawable);
         },
         DrawMode::Console =>
         {
-            draw_realtime(object, config);
+            let frame_delay = Duration::from_millis(100);
+            loop
+            {
+                let frame_begin = Instant::now();
+
+                draw(&object, &mut drawable);
+
+                let rotation = object.rotation();
+                object.set_rotation(rotation + 0.25);
+                object.update_transform();
+
+                if let Some(to_frame) = frame_delay.checked_sub(frame_begin.elapsed())
+                {
+                    thread::sleep(to_frame);
+                }
+            }
         }
+    }
+}
+
+fn draw_mode<D: DrawableDisplay>(config: &Config, object: &mut Object, display: D)
+{
+    let size = mode_size(config);
+
+    if config.undeferred
+    {
+        draw_length(config, object, &mut NormalDrawable::new(size, display));
+    } else
+    {
+        draw_length(config, object, &mut DeferredDrawable::new(size, display));
+    }
+}
+
+fn draw_full(config: Config, object: &mut Object)
+{
+    match config.draw_mode
+    {
+        DrawMode::Picture => draw_mode(&config, object, Picture::new("output.ppm".to_owned())),
+        DrawMode::Console => draw_mode(&config, object, ConsoleScreen::new())
     }
 }
 
@@ -74,45 +130,6 @@ fn mode_size(config: &Config) -> (usize, usize)
             let size = ConsoleScreen::terminal_size();
 
             config.size.unwrap_or_else(|| (size.0, size.1 - 1))
-        }
-    }
-}
-
-fn draw_picture(object: Object, config: Config)
-{
-    let size = mode_size(&config);
-
-    let surface = Picture::new("output.ppm".to_owned());
-
-    let mut drawable = NormalDrawable::new(size, surface);
-
-    object.draw(&mut drawable);
-    drawable.display();
-}
-
-fn draw_realtime(mut object: Object, config: Config)
-{
-    let size = mode_size(&config);
-
-    let surface = ConsoleScreen::new();
-
-    let mut drawable = NormalDrawable::new(size, surface);
-
-    let frame_delay = Duration::from_millis(100);
-    loop
-    {
-        let frame_begin = Instant::now();
-
-        object.draw(&mut drawable);
-        drawable.display();
-
-        let rotation = object.rotation();
-        object.set_rotation(rotation + 0.25);
-        object.update_transform();
-
-        if let Some(to_frame) = frame_delay.checked_sub(frame_begin.elapsed())
-        {
-            thread::sleep(to_frame);
         }
     }
 }

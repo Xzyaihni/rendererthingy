@@ -393,7 +393,7 @@ impl Iterator for IValueIter
     }
 }
 
-const VALUES_AMOUNT: usize = ShaderValue::LAST as usize;
+pub const VALUES_AMOUNT: usize = ShaderValue::LAST as usize;
 
 pub type ValuesType = [IValue; VALUES_AMOUNT];
 
@@ -472,17 +472,45 @@ impl Iterator for InterpolaterIter
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct FaceShader<'a>
 {
     pub color: Color,
     pub lights: &'a [Light]
 }
 
+#[derive(Debug, Clone)]
 pub struct Light
 {
     pub position: Point3D,
     //pub color: Color, no colored lights >:(
     pub intensity: f64
+}
+
+#[derive(Debug, Clone)]
+pub struct PixelInfo<'a>
+{
+    pub shader: Option<&'a FaceShader<'a>>,
+    pub interpolated: Interpolated
+}
+
+impl<'a> PixelInfo<'a>
+{
+    pub fn new(interpolated: Interpolated) -> Self
+    {
+        Self{shader: None, interpolated}
+    }
+
+    pub fn set(&mut self, shader: &'a FaceShader, interpolated: Interpolated)
+    {
+        self.shader = Some(shader);
+        self.interpolated = interpolated;
+    }
+
+    pub fn get(&self, value: ShaderValue) -> f64
+    {
+        self.interpolated[value as usize]
+    }
 }
 
 #[cfg(test)]
