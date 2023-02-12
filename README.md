@@ -14,7 +14,7 @@ cargo b -r
 ./target/release/rendererthingy -d 5 defaultmodels/cube.obj
 ```
 
-will create an image named output.ppm
+will create an image named output.png
 
 ```
 ./target/release/rendererthingy -m console -d 5 defaultmodels/cube.obj

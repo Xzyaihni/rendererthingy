@@ -4,6 +4,7 @@ use std::{
 
 use common::{
     Point,
+    Point2D,
     Point3D,
     Mat3x3,
     Mat4x4,
@@ -151,7 +152,7 @@ impl Camera
 
 pub struct Object<'a>
 {
-    model: Model,
+    model: &'a Model,
     transform: Transform,
     camera: &'a Camera,
     lights: &'a [Light],
@@ -163,7 +164,12 @@ pub struct Object<'a>
 
 impl<'a> Object<'a>
 {
-    pub fn new(model: Model, transform: Transform, camera: &'a Camera, lights: &'a [Light]) -> Self
+    pub fn new(
+        model: &'a Model,
+        transform: Transform,
+        camera: &'a Camera,
+        lights: &'a [Light]
+    ) -> Self
     {
         let mut out = Object{
             model,
@@ -181,11 +187,11 @@ impl<'a> Object<'a>
         out
     }
 
-    fn backface(p0: Point3D, p1: Point3D, p2: Point3D) -> bool
+    fn backface(p0: Point3D, p1: Point3D, p2: Point3D) -> (bool, Point3D)
     {
         let normal = (p1 - p0).cross(p2 - p0);
 
-        p0.dot(normal) >= 0.0
+        (p0.dot(normal) >= 0.0, normal)
     }
 
     pub fn draw<'d>(&'d self, drawable: &mut impl Drawable<'d>)
@@ -200,22 +206,40 @@ impl<'a> Object<'a>
     fn draw_triangle<'d>(&'d self, drawable: &mut impl Drawable<'d>, start_index: usize)
     where 'a: 'd
     {
-        let index_at = |point_index| self.model.indices[start_index * 3 + point_index];
+        let meta_index = |point_index| start_index * 3 + point_index;
+        let index_at = |point_index| self.model.indices[meta_index(point_index)];
         let world_point = |point_index| self.world_points[index_at(point_index)];
 
         let world_points = [world_point(0), world_point(1), world_point(2)];
 
+        let (is_backface, normal) =
+            Self::backface(world_points[0], world_points[1], world_points[2]);
+
+        if is_backface
         {
-            if Self::backface(world_points[0], world_points[1], world_points[2])
-            {
-                return;
-            }
+            return;
         }
 
         let point_at = |point_index|
         {
-            let index = self.model.indices[start_index * 3 + point_index];
-            let normal: Point3D = self.normals[start_index * 3 + point_index];
+            let meta_index = meta_index(point_index);
+            let index = index_at(point_index);
+
+            let normal: Point3D = if !self.normals.is_empty()
+            {
+                self.normals[meta_index]
+            } else
+            {
+                normal.normalized()
+            };
+
+            let uv: Point2D = if !self.model.uvs.is_empty()
+            {
+                self.model.uvs[meta_index]
+            } else
+            {
+                Point2D{x: 0.0, y: 0.0}
+            };
 
             let point: Point3D = self.points[index];
             let world_point: Point3D = world_points[point_index];
@@ -223,7 +247,8 @@ impl<'a> Object<'a>
             let shader_values = [
                 point.z,
                 world_point.x, world_point.y, world_point.z,
-                normal.x, normal.y, normal.z
+                normal.x, normal.y, normal.z,
+                uv.x, uv.y
             ];
 
             Point{
@@ -272,10 +297,9 @@ impl<'a> Object<'a>
             Point3D{x: normal[0], y: normal[1], z: normal[2]}
         }).collect();
 
-
         self.face_shaders = self.model.colors.iter().map(|color|
         {
-            FaceShader{color: *color, lights: self.lights}
+            FaceShader{color: *color, lights: self.lights, texture: self.model.texture.as_ref()}
         }).collect();
     }
 }

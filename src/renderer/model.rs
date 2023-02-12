@@ -5,7 +5,9 @@ use std::{
     fs::File
 };
 
-use crate::renderer::common::{Color, Point3D};
+use image::error::ImageError;
+
+use crate::renderer::common::{Color, Point2D, Point3D, Texture};
 
 
 #[allow(dead_code)]
@@ -23,6 +25,7 @@ enum ModelErrorType
     Io(io::Error),
     Material(Option<usize>),
     ParsingError(String),
+    TextureLoadError(ImageError),
     GenericError,
     MissingValue,
     MissingMaterial,
@@ -164,14 +167,15 @@ struct ModelParser<'a>
 {
     parent: &'a mut Model,
     materials: Materials,
-    normals: Vec<Point3D>
+    normals: Vec<Point3D>,
+    uvs: Vec<Point2D>
 }
 
 impl<'a> ModelParser<'a>
 {
     pub fn new(parent: &'a mut Model) -> Self
     {
-        ModelParser{parent, materials: Materials::new(), normals: Vec::new()}
+        ModelParser{parent, materials: Materials::new(), normals: Vec::new(), uvs: Vec::new()}
     }
 
     pub fn parse(&mut self, filename: &str) -> Result<(), ModelError>
@@ -220,7 +224,7 @@ impl<'a> ModelParser<'a>
 
                 for (line_index, line) in Self::parse_obj(&mtl_string).enumerate()
                 {
-                    if let Err(_) = self.parse_mtl_line(line)
+                    if let Err(_) = self.parse_mtl_line(parent_dir, line)
                     {
                         return Err(ModelErrorType::Material(Some(line_index)));
                     }
@@ -235,13 +239,26 @@ impl<'a> ModelParser<'a>
                 self.materials.set_current(line.rest().to_owned());
                 Ok(())
             },
-            "v" => Self::parse_floats(line.values, &mut self.parent.vertices, 3),
+            "v" =>
+            {
+                let mut vertices = Self::parse_floats(line.values, 3)?;
+                self.parent.vertices.append(&mut vertices);
+
+                Ok(())
+            },
             "vn" =>
             {
-                let mut normal = Vec::with_capacity(3);
-                Self::parse_floats(line.values, &mut normal, 3)?;
+                let normal = Self::parse_floats(line.values, 3)?;
 
                 self.normals.push(Point3D{x: normal[0], y: normal[1], z: normal[2]}.normalized());
+
+                Ok(())
+            },
+            "vt" =>
+            {
+                let uv = Self::parse_floats(line.values, 2)?;
+
+                self.uvs.push(Point2D{x: uv[0], y: uv[1]});
 
                 Ok(())
             },
@@ -252,6 +269,7 @@ impl<'a> ModelParser<'a>
 
     fn parse_mtl_line<'b, I: Iterator<Item=&'b str>>(
         &mut self,
+        parent_dir: &Path,
         mut line: ObjLine<'b, I>
     ) -> Result<(), ModelErrorType>
     {
@@ -276,6 +294,15 @@ impl<'a> ModelParser<'a>
                 );
 
                 self.materials.set_diffuse(color)
+            },
+            "map_Kd" =>
+            {
+                let path = parent_dir.join(line.rest());
+
+                self.parent.texture = Some(Texture::load(&path)
+                    .map_err(|err| ModelErrorType::TextureLoadError(err))?);
+
+                Ok(())
             },
             _ => Ok(())
         }
@@ -309,11 +336,10 @@ impl<'a> ModelParser<'a>
 
     fn parse_floats<'b>(
         mut unparsed: impl Iterator<Item=&'b str>,
-        output_vector: &mut Vec<f64>,
         amount: usize
-    ) -> Result<(), ModelErrorType>
+    ) -> Result<Vec<f64>, ModelErrorType>
     {
-        for _ in 0..amount
+        (0..amount).map(|_|
         {
             let value = loop
             {
@@ -327,13 +353,9 @@ impl<'a> ModelParser<'a>
                 break value;
             };
 
-            let value: f64 = value.trim().parse()
-                .map_err(|_| ModelErrorType::ParsingError(value.to_owned()))?;
-
-            output_vector.push(value);
-        }
-
-        Ok(())
+            value.trim().parse()
+                .map_err(|_| ModelErrorType::ParsingError(value.to_owned()))
+        }).collect()
     }
 
     fn parse_face<'b>(
@@ -413,10 +435,17 @@ impl<'a> ModelParser<'a>
         {
             let face: &FacePoint = &face[index];
 
-            let normal_index = face.normal.ok_or(ModelErrorType::NoNormals)?;
-
             self.parent.indices.push(face.position);
-            self.parent.normals.push(self.normals[normal_index]);
+
+            if let Some(index) = face.texture
+            {
+                self.parent.uvs.push(self.uvs[index]);
+            }
+
+            if let Some(index) = face.normal
+            {
+                self.parent.normals.push(self.normals[index]);
+            }
 
             Ok(())
         };
@@ -454,7 +483,9 @@ pub struct Model
     pub vertices: Vec<f64>,
     pub indices: Vec<usize>,
     pub colors: Vec<Color>,
-    pub normals: Vec<Point3D>
+    pub normals: Vec<Point3D>,
+    pub uvs: Vec<Point2D>,
+    pub texture: Option<Texture>
 }
 
 #[allow(dead_code)]
@@ -462,7 +493,14 @@ impl Model
 {
     pub fn new() -> Self
     {
-        Model{vertices: Vec::new(), indices: Vec::new(), colors: Vec::new(), normals: Vec::new()}
+        Model{
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            colors: Vec::new(),
+            normals: Vec::new(),
+            uvs: Vec::new(),
+            texture: None
+        }
     }
 
     pub fn read_obj(filename: &str) -> Result<Self, ModelError>

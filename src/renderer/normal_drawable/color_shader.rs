@@ -1,9 +1,8 @@
 use crate::renderer::common::{
-    Point,
+    Point2D,
     Point3D,
     Color,
     ShaderValue,
-    FaceShader,
     PixelInfo
 };
 
@@ -12,10 +11,7 @@ pub fn execute(pixel: &PixelInfo) -> Color
 {
     if let Some(shader) = pixel.shader
     {
-        let ambient = 0.2;
         let shininess = 32;
-
-        let ambient_color = Color::new(0.0, 0.0, 0.0).lerp(&shader.color, ambient);
 
         let world_point = Point3D{
             x: pixel.get(ShaderValue::PositionX),
@@ -27,6 +23,19 @@ pub fn execute(pixel: &PixelInfo) -> Color
             x: pixel.get(ShaderValue::NormalX),
             y: pixel.get(ShaderValue::NormalY),
             z: pixel.get(ShaderValue::NormalZ)
+        };
+
+        let object_color = if let Some(texture) = shader.texture
+        {
+            let uv = Point2D{
+                x: pixel.get(ShaderValue::UvX),
+                y: pixel.get(ShaderValue::UvY)
+            };
+
+            texture.pixel(uv)
+        } else
+        {
+            shader.color
         };
 
         let mut brightness = 0.0;
@@ -45,7 +54,11 @@ pub fn execute(pixel: &PixelInfo) -> Color
             brightness += (diffuse + specular) * light.intensity;
         }
 
-        ambient_color.lerp(&Color::new(1.0, 1.0, 1.0), brightness)
+        let ambient = 0.2;
+        let brightness = ambient + brightness;
+
+        let darkened = Color::new(0.0, 0.0, 0.0).lerp(&object_color, (brightness + 0.3).min(1.0));
+        darkened.lerp(&Color::new(1.0, 1.0, 1.0), (brightness - 0.3).max(0.0))
     } else
     {
         Color::new(0.0, 0.0, 0.0)

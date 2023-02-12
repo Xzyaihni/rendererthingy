@@ -69,7 +69,7 @@ impl ConsoleScreen
             character = charset[index] as char;
         }
 
-        let colorify = |color| ((color * 6.0) as u8).min(5);
+        let colorify = |color| ((color * 5.0) as u8).max(0).min(5);
 
         let r = colorify(color.r);
         let g = colorify(color.g);

@@ -21,6 +21,7 @@ pub enum ConfigError
 pub struct Config
 {
     pub model_path: String,
+    pub filename: String,
     pub draw_mode: DrawMode,
     pub size: Option<(usize, usize)>,
     pub distance: f64,
@@ -33,6 +34,7 @@ impl Config
     pub fn parse<T: Iterator<Item=String>>(args: T) -> Result<Self, ConfigError>
     {
         let mut model_path = None;
+        let mut filename = "output.png".to_owned();
         let mut draw_mode = DrawMode::Picture;
         let mut size = None;
         let mut distance = 50.0;
@@ -67,6 +69,10 @@ impl Config
                         _ => return Err(ConfigError::ParseError(value))
                     }
                 },
+                "-o" | "--output" =>
+                {
+                    filename = next_value()?.to_owned();
+                },
                 "-s" | "--size" =>
                 {
                     let value = next_value()?;
@@ -97,7 +103,7 @@ impl Config
         }
 
         let model_path = model_path.ok_or(ConfigError::PathMissing)?;
-        Ok(Config{model_path, draw_mode, size, distance, rotation, undeferred})
+        Ok(Config{model_path, filename, draw_mode, size, distance, rotation, undeferred})
     }
 
     pub fn help_message(error: Option<ConfigError>) -> !
@@ -123,6 +129,7 @@ impl Config
         println!("    -d, --distance      distance from the camera (default 50)");
         println!("    -r, --rotation      rotation of the object in radians (default 0.9)");
         println!("    -u, --undeferred    disables deferred rendering, uses less ram but slower");
+        println!("    -o, --output        specify output filename for picture mode (default output.png)");
         println!("modes:");
         println!("    picture, console");
 

@@ -52,10 +52,10 @@ fn main()
     let lights = [Light{
         position: Point3D{x: 50.0, y: 20.0, z: 30.0},
         //color: Color::new(1.0, 0.05, 0.08),
-        intensity: 0.3
+        intensity: 0.4
     }];
 
-    let mut object = Object::new(model, transform, &camera, &lights);
+    let mut object = Object::new(&model, transform, &camera, &lights);
 
     draw_full(config, &mut object);
 }
@@ -115,7 +115,7 @@ fn draw_full(config: Config, object: &mut Object)
 {
     match config.draw_mode
     {
-        DrawMode::Picture => draw_mode(&config, object, Picture::new("output.ppm".to_owned())),
+        DrawMode::Picture => draw_mode(&config, object, Picture::new(config.filename.clone())),
         DrawMode::Console => draw_mode(&config, object, ConsoleScreen::new())
     }
 }

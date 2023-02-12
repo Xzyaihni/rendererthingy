@@ -1,7 +1,4 @@
-use std::{
-    io::Write,
-    fs::File
-};
+use image::{Rgb, ImageBuffer};
 
 use crate::renderer::common::Color;
 use crate::renderer::normal_drawable::DrawableDisplay;
@@ -27,26 +24,15 @@ impl DrawableDisplay for Picture
     fn prepare(&mut self, _: (usize, usize)) {}
     fn display(&self, size: (usize, usize), colors: &[Color])
     {
-        let mut file = File::create(&self.filename).expect("couldnt create file");
+        let mut image = ImageBuffer::new(size.0 as u32, size.1 as u32);
 
-        file.write(b"P6\n").unwrap();
-
-        let size_text = size.0.to_string() + " " + &size.1.to_string() + "\n";
-        file.write(size_text.as_bytes()).unwrap();
-
-        file.write(b"255\n").unwrap();
-
-        for color in colors
+        for (pixel, color) in image.pixels_mut().zip(colors.iter())
         {
-            let color_byte = |color|
-            {
-                (color * 256.0) as u8
-            };
+            let convert = |color| (color * 255.0) as u8;
 
-            let bytes = [color_byte(color.r), color_byte(color.g), color_byte(color.b)];
-            file.write(&bytes).unwrap();
+            *pixel = Rgb([convert(color.r), convert(color.g), convert(color.b)]);
         }
 
-        file.flush().unwrap();
+        image.save(self.filename.clone()).unwrap();
     }
 }
