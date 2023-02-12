@@ -3,6 +3,7 @@ use std::{
 };
 
 use common::{
+    Color,
     Point,
     Point2D,
     Point3D,
@@ -297,9 +298,22 @@ impl<'a> Object<'a>
             Point3D{x: normal[0], y: normal[1], z: normal[2]}
         }).collect();
 
-        self.face_shaders = self.model.colors.iter().map(|color|
+        self.face_shaders = self.model.material_indices.iter().map(|material_index|
         {
-            FaceShader{color: *color, lights: self.lights, texture: self.model.texture.as_ref()}
+            let lights = self.lights;
+
+            if let Some(index) = material_index
+            {
+                let material = &self.model.materials[*index];
+
+                let color = material.diffuse_color.unwrap_or(Color::new(0.5, 0.5, 0.5));
+                let texture = material.diffuse_texture.as_ref();
+
+                FaceShader{color, lights, texture}
+            } else
+            {
+                FaceShader{color: Color::new(0.5, 0.5, 0.5), lights, texture: None}
+            }
         }).collect();
     }
 }

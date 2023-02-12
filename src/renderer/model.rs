@@ -53,6 +53,7 @@ impl From<io::Error> for ModelErrorType
 #[derive(Debug, Clone)]
 struct ObjLine<'a, I>
 {
+    index: usize,
     field: &'a str,
     rest: &'a str,
     values: I
@@ -87,24 +88,26 @@ impl<'a, I: Iterator<Item=&'a str>> ObjLine<'a, I>
 }
 
 #[derive(Debug, Clone)]
-struct Material
+pub struct Material
 {
-    diffuse_color: Option<Color>
+    pub diffuse_color: Option<Color>,
+    pub diffuse_texture: Option<Texture>
 }
 
 impl Material
 {
     pub fn new() -> Self
     {
-        Material{diffuse_color: None}
+        Material{diffuse_color: None, diffuse_texture: None}
     }
 }
 
 struct Materials
 {
     fallback_material: Material,
-    materials: HashMap<String, Material>,
-    current_material: Option<String>
+    material_indices: HashMap<String, usize>,
+    materials: Vec<Material>,
+    current_material: Option<usize>
 }
 
 impl Materials
@@ -112,18 +115,31 @@ impl Materials
     pub fn new() -> Self
     {
         Materials{
-            fallback_material: Material{diffuse_color: Some(Color::new(0.5, 0.5, 0.5))},
-            materials: HashMap::new(),
+            fallback_material: Material{
+                diffuse_color: Some(Color::new(0.5, 0.5, 0.5)),
+                diffuse_texture: None
+            },
+            material_indices: HashMap::new(),
+            materials: Vec::new(),
             current_material: None
         }
     }
 
+    pub fn materials(&self) -> &[Material]
+    {
+        &self.materials
+    }
+
     pub fn add(&mut self, name: String) -> Result<(), ModelErrorType>
     {
-        if let Entry::Vacant(entry) = self.materials.entry(name.clone())
+        if let Entry::Vacant(entry) = self.material_indices.entry(name.clone())
         {
-            self.current_material = Some(name);
-            entry.insert(Material::new());
+            let index = self.materials.len();
+
+            entry.insert(index);
+            self.materials.push(Material::new());
+
+            self.current_material = Some(index);
 
             Ok(())
         } else
@@ -132,20 +148,33 @@ impl Materials
         }
     }
 
-    pub fn current(&mut self) -> Result<&mut Material, ModelErrorType>
+    pub fn current(&mut self) -> &mut Material
     {
-        Ok(self.materials.get_mut(
-            self.current_material.as_ref().ok_or(ModelErrorType::Material(None))?
-        ).unwrap_or_else(||
+        if let Some(index) = self.current_material
         {
-            eprintln!("error switching to material {:?}, using fallback", self.current_material);
+            &mut self.materials[index]
+        } else
+        {
+            eprintln!("no current material, using fallback");
             &mut self.fallback_material
-        }))
+        }
     }
 
-    pub fn set_current(&mut self, name: String)
+    pub fn current_index(&self) -> Option<usize>
     {
-        self.current_material = Some(name);
+        self.current_material
+    }
+
+    pub fn set_current(&mut self, name: &str) -> Result<(), ModelErrorType>
+    {
+        let index = self.material_indices.get(name).ok_or(ModelErrorType::MissingMaterial);
+        self.current_material = match index
+        {
+            Ok(index) => Some(*index),
+            Err(_) => None
+        };
+
+        index.map(|_| ())
     }
 
     pub fn clear_current(&mut self)
@@ -153,13 +182,16 @@ impl Materials
         self.current_material = None;
     }
 
-    pub fn set_diffuse(&mut self, color: Color) -> Result<(), ModelErrorType>
+    pub fn set_diffuse(&mut self, color: Color)
     {
-        let material = self.current()?;
+        let material = self.current();
+        *material = Material{diffuse_color: Some(color), ..material.clone()};
+    }
 
-        *material = Material{diffuse_color: Some(color), ..*material};
-
-        Ok(())
+    pub fn set_diffuse_texture(&mut self, texture: Texture)
+    {
+        let material = self.current();
+        *material = Material{diffuse_texture: Some(texture), ..*material};
     }
 }
 
@@ -185,8 +217,9 @@ impl<'a> ModelParser<'a>
 
         let parent_dir = Path::new(filename).parent().unwrap_or_else(|| Path::new(""));
 
-        for (line_index, line) in Self::parse_obj(&file_string).enumerate()
+        for line in Self::parse_obj(&file_string)
         {
+            let index = line.index;
             if let Err(error_type) = self.parse_obj_line(parent_dir, line)
             {
                 match error_type
@@ -198,7 +231,7 @@ impl<'a> ModelParser<'a>
                     },
                     _ =>
                     {
-                        return Err(ModelError{line_index: Some(line_index), error_type});
+                        return Err(ModelError{line_index: Some(index), error_type});
                     }
                 }
             }
@@ -217,26 +250,29 @@ impl<'a> ModelParser<'a>
         {
             "mtllib" =>
             {
-                let path = parent_dir.join(line.rest());
+                let path = parent_dir.join(Self::correctify_path(line.rest()));
 
                 let mut mtl_string = String::new();
                 File::open(path)?.read_to_string(&mut mtl_string)?;
 
-                for (line_index, line) in Self::parse_obj(&mtl_string).enumerate()
+                for line in Self::parse_obj(&mtl_string)
                 {
+                    let index = line.index;
                     if let Err(_) = self.parse_mtl_line(parent_dir, line)
                     {
-                        return Err(ModelErrorType::Material(Some(line_index)));
+                        return Err(ModelErrorType::Material(Some(index)));
                     }
                 }
 
                 self.materials.clear_current();
+                self.parent.materials.extend(self.materials.materials().iter().cloned());
 
                 Ok(())
             },
             "usemtl" =>
             {
-                self.materials.set_current(line.rest().to_owned());
+                let _ = self.materials.set_current(&line.rest().to_owned());
+
                 Ok(())
             },
             "v" =>
@@ -293,14 +329,19 @@ impl<'a> ModelParser<'a>
                     component()?
                 );
 
-                self.materials.set_diffuse(color)
+                self.materials.set_diffuse(color);
+
+                Ok(())
             },
             "map_Kd" =>
             {
-                let path = parent_dir.join(line.rest());
+                let path = parent_dir.join(Self::correctify_path(line.rest()));
 
-                self.parent.texture = Some(Texture::load(&path)
-                    .map_err(|err| ModelErrorType::TextureLoadError(err))?);
+                match Texture::load(&path)
+                {
+                    Ok(texture) => self.materials.set_diffuse_texture(texture),
+                    Err(err) => eprintln!("error loading texture {err}")
+                }
 
                 Ok(())
             },
@@ -308,9 +349,16 @@ impl<'a> ModelParser<'a>
         }
     }
 
+    fn correctify_path(wrong_path: &str) -> String
+    {
+        //i hate windows and its backslashes
+
+        wrong_path.trim().replace('\\', "/")
+    }
+
     fn parse_obj<'b>(text: &'b str) -> impl Iterator<Item=ObjLine<'b, impl Iterator<Item=&'b str>>>
     {
-        text.lines().filter_map(|line|
+        text.lines().enumerate().filter_map(|(index, line)|
         {
             let line = Self::remove_comments(line).trim();
 
@@ -330,7 +378,7 @@ impl<'a> ModelParser<'a>
                 after_space = &line[position+1..];
             }
 
-            Some(ObjLine{field: data_type, rest: after_space, values: splits})
+            Some(ObjLine{index, field: data_type, rest: after_space, values: splits})
         })
     }
 
@@ -428,9 +476,6 @@ impl<'a> ModelParser<'a>
             return Err(ModelErrorType::GenericError);
         }
 
-        let fallback_material = self.materials.fallback_material.clone();
-        let material = self.materials.current()?;
-
         let mut insert_face = |index| -> Result<(), ModelErrorType>
         {
             let face: &FacePoint = &face[index];
@@ -456,9 +501,7 @@ impl<'a> ModelParser<'a>
             insert_face(v)?;
             insert_face(0)?;
 
-            self.parent.colors.push(
-                material.diffuse_color.unwrap_or(fallback_material.diffuse_color.unwrap())
-            );
+            self.parent.material_indices.push(self.materials.current_index());
         }
 
         Ok(())
@@ -482,10 +525,10 @@ pub struct Model
 {
     pub vertices: Vec<f64>,
     pub indices: Vec<usize>,
-    pub colors: Vec<Color>,
+    pub material_indices: Vec<Option<usize>>,
     pub normals: Vec<Point3D>,
     pub uvs: Vec<Point2D>,
-    pub texture: Option<Texture>
+    pub materials: Vec<Material>
 }
 
 #[allow(dead_code)]
@@ -496,10 +539,10 @@ impl Model
         Model{
             vertices: Vec::new(),
             indices: Vec::new(),
-            colors: Vec::new(),
+            material_indices: Vec::new(),
             normals: Vec::new(),
             uvs: Vec::new(),
-            texture: None
+            materials: Vec::new()
         }
     }
 
