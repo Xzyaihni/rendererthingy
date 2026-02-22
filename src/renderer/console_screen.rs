@@ -30,7 +30,7 @@ impl ConsoleScreen
 
     pub fn terminal_size() -> (usize, usize)
     {
-        let winsize = libc::winsize{
+        let mut winsize = libc::winsize{
             ws_row: 0,
             ws_col: 0,
             ws_xpixel: 0,
@@ -39,7 +39,12 @@ impl ConsoleScreen
 
         unsafe
         {
-            libc::ioctl(0, libc::TIOCGWINSZ, &winsize);
+            libc::ioctl(0, libc::TIOCGWINSZ, &mut winsize);
+        }
+
+        if winsize.ws_col == 0 || winsize.ws_row == 0
+        {
+            eprintln!("couldnt get a valid size??");
         }
 
         (winsize.ws_col as usize, winsize.ws_row as usize)
@@ -47,10 +52,10 @@ impl ConsoleScreen
 
     fn output_color(color: Color)
     {
-        let charset =
+        let _charset =
             "`.-':_,^=;><+!rc*/z?sLTv)J7(|Fi{C}fI31tlu[neoZ5Yxjya]2ESwqkP6h9d4VpOGbUAKXHm8RD#$Bg0MNWQ%&@";
 
-        let charset = charset.as_bytes();
+        /*let charset = charset.as_bytes();
 
         let lightness = (color.r + color.g + color.b) / 3.0;
 
@@ -67,7 +72,9 @@ impl ConsoleScreen
         } else
         {
             character = charset[index] as char;
-        }
+        }*/
+
+        let character = '█';
 
         let colorify = |color| ((color * 5.0) as u8).max(0).min(5);
 

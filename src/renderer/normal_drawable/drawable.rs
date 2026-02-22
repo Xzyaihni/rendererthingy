@@ -303,6 +303,7 @@ pub trait Drawable<'a>
         }
     }
 
+    #[allow(dead_code)]
     fn triangle_wireframe(
         &mut self,
         p0: Point,

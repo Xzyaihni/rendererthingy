@@ -129,7 +129,7 @@ fn mode_size(config: &Config) -> (usize, usize)
         {
             let size = ConsoleScreen::terminal_size();
 
-            config.size.unwrap_or_else(|| (size.0, size.1 - 1))
+            config.size.unwrap_or_else(|| (size.0, size.1.saturating_sub(1)))
         }
     }
 }

@@ -110,6 +110,7 @@ impl Transform
     }
 }
 
+#[derive(Debug)]
 pub struct Camera
 {
     near: f64,
