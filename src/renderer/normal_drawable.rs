@@ -86,11 +86,6 @@ impl<'a, T> Drawable<'a> for NormalSurface<'a, T>
 {
     fn set_pixel_data(&mut self, point: Point<usize>, shader: &'a FaceShader)
     {
-        if (point.y >= self.size.1) || (point.x >= self.size.0)
-        {
-            return;
-        }
-
         let index = (self.size.1 - point.y - 1) * self.size.0 + point.x;
 
         let depth = point.get(ShaderValue::Depth);
@@ -180,11 +175,6 @@ impl<'a, T> Drawable<'a> for DeferredSurface<'a, T>
 {
     fn set_pixel_data(&mut self, point: Point<usize>, shader: &'a FaceShader)
     {
-        if (point.y >= self.size.1) || (point.x >= self.size.0)
-        {
-            return;
-        }
-
         let index = (self.size.1 - point.y - 1) * self.size.0 + point.x;
 
         let depth = point.get(ShaderValue::Depth);
